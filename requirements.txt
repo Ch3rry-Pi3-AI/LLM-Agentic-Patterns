@@ -2,4 +2,5 @@ groq
 ipykernel
 python-dotenv
 colorama
-types-coloramagraphviz
+types-colorama
+graphviz
