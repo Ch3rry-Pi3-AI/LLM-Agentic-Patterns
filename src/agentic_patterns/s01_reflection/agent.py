@@ -3,12 +3,12 @@ agent.py
 --------
 ReflectionAgent: generate -> reflect -> (optionally) iterate.
 
-This is a modularised version of your original script, with the logic preserved
+This is a modularised version of the original script, with the logic preserved
 and dependencies injected where sensible.
 
 Notes
 -----
-- Uses your existing utilities:
+- Uses existing utilities:
     agentic_patterns.utils.completions.{build_prompt_structure, completions_create,
                                         FixedFirstChatHistory, update_chat_history}
     agentic_patterns.utils.logging.fancy_step_tracker
@@ -74,7 +74,9 @@ class ReflectionAgent:
     """
 
     def __init__(self, model_cfg: ModelConfig | None = None, client=None) -> None:
+        # Keep the model name configurable but default to ModelConfig.
         self.model = (model_cfg or ModelConfig()).model
+        # Allow DI of the client for testing; default to a real Groq client.
         self.client = client or get_groq_client()
 
     # -------------------------------------------------------------------
@@ -107,6 +109,7 @@ class ReflectionAgent:
         str
             The model-generated content.
         """
+        # Delegate actual inference to the shared utility.
         output = completions_create(self.client, history, self.model)
         if verbose > 0:
             print(log_color, f"\n\n{log_title}\n\n", output)
@@ -187,6 +190,7 @@ class ReflectionAgent:
         str
             The final generated content (last "assistant" output from generation).
         """
+        # Combine any caller-supplied prompts with the defaults.
         gen_sys_prompt = compose_prompt(generation_system_prompt, BASE_GENERATION_SYSTEM_PROMPT)
         ref_sys_prompt = compose_prompt(reflection_system_prompt, BASE_REFLECTION_SYSTEM_PROMPT)
 
@@ -200,6 +204,7 @@ class ReflectionAgent:
             total_length=3,  # system (fixed) + latest user/assistant turns
         )
 
+        # Reflection history starts with just the reflection system message.
         reflection_history = FixedFirstChatHistory(
             [build_prompt_structure(prompt=ref_sys_prompt, role="system")],
             total_length=3,
@@ -207,19 +212,22 @@ class ReflectionAgent:
 
         final_generation: str = ""
 
+        # -------------------------------------------------------------------
+        # Iterative loop: generate -> reflect -> possibly stop/continue
+        # -------------------------------------------------------------------
         for step in range(n_steps):
             if verbose > 0:
                 fancy_step_tracker(step, n_steps)
 
-            # 1) Generate
+            # 1) Generate content from the current generation history.
             final_generation = self.generate(generation_history, verbose=verbose)
             update_chat_history(generation_history, final_generation, "assistant")
             update_chat_history(reflection_history, final_generation, "user")
 
-            # 2) Reflect
+            # 2) Produce a critique of the generation.
             critique = self.reflect(reflection_history, verbose=verbose)
 
-            # Early stop if no changes recommended
+            # 3) Early stop if reflection deems the content satisfactory.
             if "<OK>" in critique:
                 if verbose > 0:
                     print(
@@ -228,7 +236,7 @@ class ReflectionAgent:
                     )
                 break
 
-            # 3) Feed critique back
+            # 4) Feed the critique back into the generation loop as the next user turn.
             update_chat_history(generation_history, critique, "user")
             update_chat_history(reflection_history, critique, "assistant")
 
